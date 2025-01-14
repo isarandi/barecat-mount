@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=42", "wheel", "cython>=3.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "barecat-mount"
+version = "0.1.0"
+description = """
+Mount Barecat archives with FUSE.
+"""
+authors = [
+    { name = "István Sárándi", email = "istvan.sarandi@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+
+dependencies = [
+    "crc32c",
+    "barecat @ git+https://github.com/isarandi/barecat.git",
+]
+
+[project.scripts]
+barecat-mount = "barecat_mount.cli:mount"
+
+[tool.setuptools]
+packages = ["barecat_mount"]
+package-dir = { "" = "src" }
+
+[tool.black]
+line-length = 100
+skip-string-normalization = true
