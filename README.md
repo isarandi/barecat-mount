@@ -8,6 +8,13 @@ so entries will start appearing even in huge directories fairly quickly.
 
 Barecat archives can be mounted via FUSE, allowing it to be used like a filesystem locally. This is useful for browsing the contents of the archive, for reading and writing files. This is mostly for inspecting the data and making smaller changes, but for the main workload (e.g. training a deep learning model), you should use the Python API, which is more efficient as it directly accesses the data without the overhead of FUSE.
 
+## Installation
+
+```bash
+sudo apt-get install libfuse-dev  # or its equivalent with other package managers
+pip install git+https://github.com/isarandi/barecat-mount.git
+```
+
 ## Usage
 
 ```bash
