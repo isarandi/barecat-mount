@@ -1,6 +1,7 @@
 import argparse
 import barecat
-from barecat_mount.barecat_mount import BarecatFuse
+from barecat_mount.barecat_mount import BarecatFuse, BarecatFuseMmap, PyFuse
+
 
 def mount():
     parser = argparse.ArgumentParser(description='Mount a Barecat archive as a FUSE filesystem.')
@@ -9,6 +10,11 @@ def mount():
     parser.add_argument('--writable', action='store_true', help='mount the filesystem writeable')
     parser.add_argument('--overwrite', action='store_true', help='delete existing barecat')
     parser.add_argument('--append-only', action='store_true', help='append-only mode')
+    parser.add_argument(
+        '--mmap',
+        action='store_true',
+        help='Use memory-mapped files to read data. Ignored if --writable is specified.',
+    )
     parser.add_argument(
         '--enable-defrag',
         action='store_true',
@@ -28,17 +34,22 @@ def mount():
         '--foreground', action='store_true', help='run in the foreground, don\'t daemonize'
     )
     args = parser.parse_args()
+    readonly = not args.writable
     with barecat.Barecat(
         args.barecat_file,
-        readonly=not args.writable,
+        readonly=readonly,
         append_only=args.append_only,
         overwrite=args.overwrite,
         shard_size_limit=args.shard_size_limit,
     ) as bc:
-        barecat_fuse = BarecatFuse(bc, enable_defrag=args.enable_defrag)
+        barecat_fuse = (
+            BarecatFuseMmap(bc)
+            if readonly and args.mmap
+            else BarecatFuse(bc, enable_defrag=args.enable_defrag)
+        )
         barecat_fuse.mount(
             args.mount_point,
-            readonly=not args.writable,
+            readonly=readonly,
             single_threaded=True,
             foreground=args.foreground,
         )

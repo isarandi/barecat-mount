@@ -1,3 +1,6 @@
+import random
+import string
+
 import errno
 import itertools
 import os
@@ -23,9 +26,11 @@ from barecat_mount.barecat_mount_cython import (
     PyFuse,
     Stat,
     StatPtr,
+    RenameFlags,
 )
 from barecat.common import BarecatDirInfo, BarecatFileInfo, BarecatEntryInfo
 from barecat.util import fileobj_crc32c
+from barecat.cython.barecat_cython import BarecatMmapCython, BarecatCython
 
 
 class BarecatFuse(PyFuse):
@@ -437,7 +442,15 @@ class BarecatFuse(PyFuse):
                 self.total_size_max = max(self.total_size_max, self.total_size)
             self.pending_finfo = None
 
-    def rename(self, old, new, flags):
+    def rename(self, old: str, new: str, flags: RenameFlags):
+        if RenameFlags.EXCHANGE in flags:
+            tempname = random_string()
+            self.rename(old, tempname, flags=flags & ~RenameFlags.EXCHANGE)
+            self.rename(new, old, flags=flags & ~RenameFlags.EXCHANGE)
+            self.rename(tempname, new, flags=flags & ~RenameFlags.EXCHANGE)
+            return
+
+        allow_overwrite = RenameFlags.NOREPLACE not in flags
         if self.is_pending(old):
             if self.bc.exists(new):
                 raise FuseError(errno.EEXIST)
@@ -448,11 +461,17 @@ class BarecatFuse(PyFuse):
         if self.is_pending(new):
             raise FuseError(errno.EEXIST)
         try:
-            self.bc.index.rename(old, new)
+            self.bc.index.rename(old, new, allow_overwrite)
         except FileNotFoundBarecatError:
             raise FuseError(errno.ENOENT)
         except FileExistsBarecatError:
             raise FuseError(errno.EEXIST)
+        except DirectoryNotEmptyBarecatError:
+            raise FuseError(errno.ENOTEMPTY)
+        except IsADirectoryBarecatError:
+            raise FuseError(errno.EISDIR)
+        except NotADirectoryBarecatError:
+            raise FuseError(errno.ENOTDIR)
 
     def truncate(self, path, length, fi):
         if self.is_pending(path, fi):
@@ -505,6 +524,20 @@ class BarecatFuse(PyFuse):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+
+class BarecatFuseMmap(BarecatFuse):
+    def __init__(self, bc: Barecat, mmap: bool = False):
+        super().__init__(bc)
+        self.bc_mmap = BarecatMmapCython(self.bc.path)
+
+    def read(self, path: str, buf: memoryview, offset: int, fi: FuseFileInfo):
+        try:
+            mybuf = self.bc_mmap.read(path[1:])[offset : offset + len(buf)]
+            buf[: len(mybuf)] = mybuf.cast('B')
+            return len(mybuf)
+        except FileNotFoundBarecatError:
+            raise FuseError(errno.ENOENT)
 
 
 class BufferedCursor:
@@ -584,9 +617,15 @@ def file_or_dir_info_to_stat(info: BarecatEntryInfo):
     return dir_info_to_stat(info)
 
 
-def mount(barecat_path, mountpoint, readonly=False, single_threaded=True, foreground=True):
+def random_string(length=16):
+    alphabet = string.ascii_letters + string.digits  # No special characters
+    return ''.join(random.choices(alphabet, k=length))
+
+def mount(
+    barecat_path, mountpoint, readonly=False, single_threaded=True, foreground=True, mmap=False
+):
     with Barecat(barecat_path, readonly=readonly) as bc:
-        bc_fuse = BarecatFuse(bc)
+        bc_fuse = BarecatFuseMmap(bc) if readonly and mmap else BarecatFuse(bc)
         bc_fuse.mount(
             mountpoint, readonly=readonly, single_threaded=single_threaded, foreground=foreground
         )

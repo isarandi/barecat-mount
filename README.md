@@ -1,4 +1,3 @@
-
 # Mounting Barecat archives via FUSE
 
 ## Background

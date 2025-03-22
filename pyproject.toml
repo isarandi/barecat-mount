@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=42", "wheel", "cython>=3.0.0"]
+requires = ["setuptools>=64", "wheel", "cython>=3", "setuptools_scm[toml]>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "barecat-mount"
-version = "0.1.0"
+dynamic = ["version"]
 description = """
 Mount Barecat archives with FUSE.
 """
@@ -17,16 +17,48 @@ license = { file = "LICENSE" }
 
 dependencies = [
     "crc32c",
-    "barecat @ git+https://github.com/isarandi/barecat.git",
+    "barecat",
 ]
+
+keywords = [
+    "sqlite",
+    "storage",
+    "archive",
+    "random-access",
+    "filesystem",
+    "fuse",
+    "file-indexing"
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: System :: Archiving",
+    "Topic :: System :: Filesystems",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Cython",
+    "Operating System :: POSIX :: Linux"
+]
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
+write_to = "src/barecat_mount/_version.py"
 
 [project.scripts]
 barecat-mount = "barecat_mount.cli:mount"
 
 [tool.setuptools]
-packages = ["barecat_mount"]
 package-dir = { "" = "src" }
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.black]
-line-length = 100
+line-length = 99
 skip-string-normalization = true

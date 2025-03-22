@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from libc.string cimport memset
 from libc.stdlib cimport free, malloc
 from posix.types cimport mode_t, off_t, uid_t, gid_t, dev_t, ino_t, blksize_t, blkcnt_t, pid_t
-from libc.stdint cimport int64_t, uint64_t
+from libc.stdint cimport int64_t, uint64_t, uint8_t
 from libc.time cimport time_t
 from enum import IntFlag
 
@@ -52,7 +52,27 @@ cdef extern from "fcntl.h":
     int S_IFLNK
     int S_IFSOCK
 
+
 cdef extern from "fuse3/fuse.h":
+
+    enum fuse_buf_flags:
+        FUSE_BUF_IS_FD = 1 << 1
+        FUSE_BUF_FD_SEEK = 1 << 2
+        FUSE_BUF_FD_RETRY = 1 << 3
+
+    struct fuse_buf:
+        size_t size
+        fuse_buf_flags flags
+        void *mem
+        int fd
+        off_t pos
+
+
+    struct fuse_bufvec:
+        size_t count
+        size_t idx
+        size_t off
+        fuse_buf buf[1]
 
     unsigned int RENAME_NOREPLACE
     unsigned int RENAME_EXCHANGE
@@ -166,6 +186,7 @@ cdef extern from "fuse3/fuse.h":
         int (*mkdir)(const char *, mode_t)
         int (*create)(const char *, mode_t, fuse_file_info *)
         int (*read)(const char *, char *, size_t, off_t, fuse_file_info *)
+        int (*read_buf)(const char *, fuse_bufvec **bufp, size_t size, off_t off, fuse_file_info *)
         int (*write)(const char *, const char *, size_t, off_t, fuse_file_info *)
         int (*release)(const char *, fuse_file_info *)
         int (*truncate)(const char *, off_t, fuse_file_info *)
@@ -352,6 +373,10 @@ class FuseDirEntry:
     stat: dict = None
     offset: int = 0
 
+class RenameFlags(IntFlag):
+    NOREPLACE = 1 << 0
+    EXCHANGE = 1 << 1
+    WHITEOUT = 1 << 2
 
 
 cdef class StatPtr:
@@ -629,6 +654,9 @@ cdef class PyFuse:
     def read(self, path: str, buf: memoryview, offset: off_t, fi: FuseFileInfo):
         pass
 
+    def read_return(self, path: str, size: size_t, offset: off_t, fi: FuseFileInfo):
+        pass
+
     def write(self, path: str, buf: memoryview, offset: off_t, fi: FuseFileInfo):
         pass
 
@@ -647,7 +675,7 @@ cdef class PyFuse:
     def rmdir(self, path: str):
         pass
 
-    def rename(self, old: str, new: str, flags: int):
+    def rename(self, old: str, new: str, flags: RenameFlags):
         pass
 
     def opendir(self, path: str, fi: FuseFileInfo):
@@ -715,7 +743,7 @@ cdef class PyFuse:
     def rmdir_raw(self, path: str):
         pass
 
-    def rename_raw(self, old: str, new: str, flags: int):
+    def rename_raw(self, old: str, new: str, flags: RenameFlags):
         pass
 
     def opendir_raw(self, path: str, fi: FuseFileInfo):
@@ -910,6 +938,28 @@ cdef int c_read(const char *path, char *buf, size_t size, off_t offset, fuse_fil
         return -e.error_number
 
 
+cdef int c_read_return(const char *path, fuse_bufvec **bufp, size_t size, off_t offset, fuse_file_info *fi) noexcept:
+    py_fuse = get_py_fuse()
+    py_path = path.decode('utf-8')
+    try:
+        mview: memoryview = py_fuse.read_return(py_path, size, offset, FuseFileInfo.from_ptr(fi))
+    except FuseError as e:
+        return -e.error_number
+
+    cdef uint8_t[::1] buf = mview.cast('B')
+    print(buf[:10])
+    bufp[0] = <fuse_bufvec *> malloc(sizeof(fuse_bufvec))
+    bufp[0].count = 1
+    bufp[0].idx = 0
+    bufp[0].off = 0
+    bufp[0].buf[0].flags = <fuse_buf_flags> 0
+    bufp[0].buf[0].mem = &buf[0]
+    bufp[0].buf[0].size = mview.nbytes
+    bufp[0].buf[0].fd = -1
+    bufp[0].buf[0].pos = 0
+    return 0
+
+
 cdef int c_read_raw(const char *path, char *buf, size_t size, off_t offset, fuse_file_info *fi) noexcept:
     py_fuse = get_py_fuse()
     py_path = path.decode('utf-8')
@@ -1001,7 +1051,7 @@ cdef int c_rename(const char *old, const char *new, unsigned int flags) noexcept
     py_old = old.decode('utf-8')
     py_new = new.decode('utf-8')
     try:
-        py_fuse.rename(py_old, py_new, flags)
+        py_fuse.rename(py_old, py_new, RenameFlags(flags))
     except FuseError as e:
         return -e.error_number
     return 0
@@ -1011,7 +1061,7 @@ cdef int c_rename_raw(const char *old, const char *new, unsigned int flags) noex
     py_fuse = get_py_fuse()
     py_old = old.decode('utf-8')
     py_new = new.decode('utf-8')
-    return py_fuse.rename_raw(py_old, py_new, flags)
+    return py_fuse.rename_raw(py_old, py_new, RenameFlags(flags))
 
 
 cdef int c_opendir(const char *path, fuse_file_info *fi) noexcept:
@@ -1259,7 +1309,9 @@ def wrapped_fuse_main(PyFuse py_fuse, list args):
     elif PyFuse.is_method_overridden(py_fuse, "rename"):
         fuse_ops.rename = c_rename
 
-    if PyFuse.is_method_overridden(py_fuse, "read_raw"):
+    if PyFuse.is_method_overridden(py_fuse, "read_return"):
+        fuse_ops.read_buf = c_read_return
+    elif PyFuse.is_method_overridden(py_fuse, "read_raw"):
         fuse_ops.read = c_read_raw
     elif PyFuse.is_method_overridden(py_fuse, "read"):
         fuse_ops.read = c_read
