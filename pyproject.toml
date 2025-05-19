@@ -18,6 +18,7 @@ license = { file = "LICENSE" }
 dependencies = [
     "crc32c",
     "barecat",
+    "barecat-cython",
 ]
 
 keywords = [

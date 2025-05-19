@@ -30,7 +30,7 @@ from barecat_mount.barecat_mount_cython import (
 )
 from barecat.common import BarecatDirInfo, BarecatFileInfo, BarecatEntryInfo
 from barecat.util import fileobj_crc32c
-from barecat.cython.barecat_cython import BarecatMmapCython, BarecatCython
+from barecat_cython import BarecatMmapCython, BarecatCython
 
 
 class BarecatFuse(PyFuse):
