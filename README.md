@@ -11,8 +11,8 @@ Barecat archives can be mounted via FUSE, allowing it to be used like a filesyst
 ## Installation
 
 ```bash
-sudo apt-get install libfuse-dev  # or its equivalent with other package managers
-pip install git+https://github.com/isarandi/barecat-mount.git
+sudo apt-get install libfuse-dev libsqlite3-dev  # or equivalent with other package managers
+pip install barecat-mount
 ```
 
 ## Usage
